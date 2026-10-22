@@ -137,7 +137,7 @@ elixir tools/header_dump.exs envelope.bin
 
 ## Documentation
 
-* API documentation: `mix docs`, or [HexDocs](https://hexdocs.pm/sinetex) once published.
+* API documentation: [HexDocs](https://hexdocs.pm/sinetex).
 * [docs/SPEC.md](docs/SPEC.md): what the library does with each byte, with the
   source of every rule (manual, market practice or library decision).
 * [guides/manual.md](guides/manual.md) (Portuguese): each function next to the

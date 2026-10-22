@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-10-21
 
 ### Added
 
@@ -20,3 +20,5 @@ All notable changes to this project are documented here. The format follows
   `max_input_bytes` and `max_output_bytes` options of `Sinetex.open/2`.
 - `Sinetex.Header` and `Sinetex.Serial` for the header format.
 - `tools/header_dump.exs`, to inspect the header of an envelope without keys.
+
+[0.1.0]: https://github.com/openspb/sinetex/releases/tag/v0.1.0
