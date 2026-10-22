@@ -49,13 +49,17 @@ defmodule Sinetex.PropertyTest do
     end
   end
 
+  # Drawn from the covered bytes only: filtering random positions would throw
+  # away about half of them when there is no encryption.
+  defp covered_positions(envelope, c04),
+    do: Enum.filter(0..(byte_size(envelope) - 1), &covered?(&1, c04))
+
   property "changing any covered byte gives an error", ctx do
     check all content <- binary(min_length: 1, max_length: 512),
               opts <- options(),
               {:ok, envelope} =
                 Sinetex.seal(content, [from: ctx.a, to: ctx.b.certificate] ++ opts),
-              pos <- integer(0..(byte_size(envelope) - 1)),
-              covered?(pos, opts[:c04]),
+              pos <- member_of(covered_positions(envelope, opts[:c04])),
               mask <- integer(1..255),
               max_runs: 500 do
       rest = binary_part(envelope, pos + 1, byte_size(envelope) - pos - 1)
