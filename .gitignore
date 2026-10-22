@@ -1,0 +1,17 @@
+# Mix
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+sinetex-*.tar
+/tmp/
+
+# Generated test material (the script is versioned; the output is not)
+/test/fixtures/generated/
+
+# Python venv for the interop oracle
+/.venv/
+__pycache__/

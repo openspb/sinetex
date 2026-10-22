@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported pair, then the newest OTP of each Elixir line.
+          - { elixir: "1.16", otp: "26" }
+          - { elixir: "1.18", otp: "27" }
+          - { elixir: "1.20", otp: "28" }
+          - { elixir: "1.20", otp: "29" }
+    env:
+      MIX_ENV: test
+      SINETEX_PYTHON: python
+      SINETEX_REQUIRE_INTEROP: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      # Independent implementation used as an oracle by test/interop.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install "cryptography>=43"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+
+  # Same suite on an OTP linked to OpenSSL >= 3.2, where RSAES-PKCS1-v1_5
+  # decryption does "implicit rejection". The C14 error codes must not change.
+  openssl:
+    name: OpenSSL 3.2+ (Alpine)
+    runs-on: ubuntu-24.04
+    container: hexpm/elixir:1.20.4-erlang-29.1.2-alpine-3.24.2
+    env:
+      MIX_ENV: test
+      SINETEX_PYTHON: python3
+      SINETEX_REQUIRE_INTEROP: "1"
+    steps:
+      - run: apk add --no-cache bash git openssl python3 py3-cryptography
+      - uses: actions/checkout@v5
+      - name: Show the OpenSSL that :crypto uses
+        run: |
+          elixir -e '
+            [{_, _, version}] = :crypto.info_lib()
+            IO.puts(version)
+            [_, major, minor] = Regex.run(~r/OpenSSL (\d+)\.(\d+)/, version)
+            if {String.to_integer(major), String.to_integer(minor)} < {3, 2}, do: System.halt(1)
+          '
+      - run: mix local.hex --force && mix local.rebar --force
+      - run: mix deps.get
+      - run: mix test
+
+  lint:
+    name: Format, Credo, Dialyzer, docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          elixir-version: "1.20"
+          otp-version: "29"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: lint-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+
+      - run: mix deps.get
+      - run: mix deps.unlock --check-unused
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - run: mix credo --strict
+      - run: mix dialyzer --format github
+      - run: mix docs --warnings-as-errors
