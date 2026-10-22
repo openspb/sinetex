@@ -183,6 +183,32 @@ defmodule SinetexTest do
       assert header.c12 == 4
       assert {:ok, _} = open(ctx, envelope, from: certificate("chamber", pc: 4))
     end
+
+    test "serial numbers given with serial:", ctx do
+      # long_serial does not fit C11/C13 unless both sides agree on a number.
+      long = identity("long_serial", serial: 0xABCD)
+      {:ok, envelope} = Sinetex.seal(@content, from: long, to: ctx.cert_b)
+      {:ok, header, _} = Header.decode(envelope)
+      assert header.c13 == "0000000000000000000000000000ABCD"
+
+      assert {:ok, %Opened{content: @content}} =
+               open(ctx, envelope, from: certificate("long_serial", serial: 0xABCD))
+
+      # A recipient known by another number.
+      {:ok, to_alias} =
+        Sinetex.seal(@content, from: ctx.a, to: certificate("bank_b", serial: 0x0B))
+
+      assert c03(open(ctx, to_alias)) == 0x08
+      me = identity("bank_b", serial: 0x0B)
+      assert {:ok, %Opened{content: @content}} = Sinetex.open(to_alias, as: me, from: ctx.cert_a)
+    end
+
+    test "compression level", ctx do
+      for format <- [:gzip, :zip], level <- [:none, :best_speed, :best_compression, 6] do
+        opts = [c04: 8, compression: format, compression_level: level]
+        assert {:ok, %Opened{content: @content}} = open(ctx, seal!(ctx, @content, opts))
+      end
+    end
   end
 
   describe "seal/2 errors" do
@@ -213,7 +239,10 @@ defmodule SinetexTest do
             [from: nil],
             [to: :someone],
             [unknown: 1],
-            [zip_entry_name: ""]
+            [zip_entry_name: ""],
+            [compression_level: :best_speed],
+            [compression_level: :fast, c04: 8, compression: :gzip],
+            [compression_level: 10, c04: 8, compression: :gzip]
           ] do
         assert_raise ArgumentError, fn -> Sinetex.seal("x", Keyword.merge(base, bad)) end
       end
@@ -255,8 +284,21 @@ defmodule SinetexTest do
       assert c03(open(ctx, tamper_header(v3, &%{&1 | c07: 1}))) == 0x04
       assert c03(open(ctx, tamper_header(v2, &%{&1 | c07: 2}))) == 0x04
       assert c03(open(ctx, tamper_header(v3, &%{&1 | c07: 3}))) == 0x04
-      # Without encryption C07 is still checked.
-      assert c03(open(ctx, tamper_header(seal!(ctx, @content, c04: 2), &%{&1 | c07: 0}))) == 0x04
+      # Without encryption C07 is still checked, but 0x00 is accepted (below).
+      signed = seal!(ctx, @content, c04: 2)
+      assert c03(open(ctx, tamper_header(signed, &%{&1 | c07: 1}))) == 0x04
+      assert c03(open(ctx, tamper_header(signed, &%{&1 | c07: 3}))) == 0x04
+      # With encryption 0x00 is an error.
+      assert c03(open(ctx, tamper_header(v3, &%{&1 | c07: 0}))) == 0x04
+      assert c03(open(ctx, tamper_header(v2, &%{&1 | c07: 0}))) == 0x04
+    end
+
+    test "without encryption C06 and C07 may be 0x00", ctx do
+      for version <- [2, 3], c04 <- [2, 3, 6, 10] do
+        opts = [version: version, c04: c04] ++ if(c04 == 10, do: [compression: :gzip], else: [])
+        envelope = tamper_header(seal!(ctx, @content, opts), &%{&1 | c06: 0, c07: 0, c10: 0})
+        assert {:ok, %Opened{protection: :signed}} = open(ctx, envelope)
+      end
     end
 
     test "0x05 sender key algorithm", ctx do
@@ -437,6 +479,14 @@ defmodule SinetexTest do
       assert {:error, %Error{c03: 0x02, reason: {:header, [0x02, 0x05]}}} = open(ctx, tampered)
     end
 
+    test "inspect shows the codes of the reason as numbers", ctx do
+      envelope = seal!(ctx)
+      c11_c13 = ctx.cert_c.serial_field
+      {:error, error} = open(ctx, tamper_header(envelope, &%{&1 | c11: c11_c13, c13: c11_c13}))
+      assert error.reason == {:header, [0x08, 0x0A]}
+      assert inspect(error) =~ "reason: {:header, [8, 10]}"
+    end
+
     test "header errors come before cryptography", ctx do
       envelope = seal!(ctx)
       tampered = envelope |> flip_byte(600) |> tamper_header(&%{&1 | c04: 9})
@@ -456,8 +506,65 @@ defmodule SinetexTest do
                open(ctx, @empty <> "echo", allow_clear: true)
     end
 
+    test "C11 and C13 may hold the serial number zero as text", ctx do
+      zeros = String.duplicate("0", 32)
+
+      for {c11, c13} <- [{zeros, zeros}, {zeros, <<0::256>>}, {<<0::256>>, zeros}] do
+        envelope = tamper_header(@empty, &%{&1 | c11: c11, c13: c13}) <> "echo"
+
+        assert {:ok, %Opened{content: "echo", protection: :clear}} =
+                 open(ctx, envelope, allow_clear: true)
+
+        assert {:error, %Error{c03: 0x02, reason: :clear_not_allowed}} = open(ctx, envelope)
+      end
+    end
+
     test "a header with zeros and C02 = 0 that is not entirely empty is invalid", ctx do
       assert c03(open(ctx, tamper_header(@empty, &%{&1 | c04: 2}), allow_clear: true)) == 0x02
+    end
+  end
+
+  describe "pc_check: :ignore" do
+    test "C10 and C12 are not compared with the certificates", ctx do
+      envelope = tamper_header(seal!(ctx), &%{&1 | c10: 1, c12: 2})
+      assert c03(open(ctx, envelope)) == 0x07
+
+      assert {:ok, %Opened{content: @content, sender: sender}} =
+               open(ctx, envelope, pc_check: :ignore)
+
+      assert sender == ctx.cert_a
+    end
+
+    test "the other checks stay", ctx do
+      envelope = seal!(ctx)
+      ignore = [pc_check: :ignore]
+      other = ctx.cert_c.serial_field
+
+      assert c03(open(ctx, tamper_header(envelope, &%{&1 | c11: other}), ignore)) == 0x08
+      assert c03(open(ctx, tamper_header(envelope, &%{&1 | c13: other}), ignore)) == 0x0A
+      assert c03(open(ctx, tamper_header(envelope, &%{&1 | c13: <<0::256>>}), ignore)) == 0x0A
+      assert c03(open(ctx, envelope, [from: ctx.cert_c] ++ ignore)) == 0x0A
+
+      {:ok, by_c} = Sinetex.seal(@content, from: identity("bank_c"), to: ctx.cert_b)
+      assert c03(open(ctx, by_c, [known: [ctx.cert_c]] ++ ignore)) == 0x0C
+      forged = tamper_header(by_c, &%{&1 | c13: ctx.cert_a.serial_field})
+      assert c03(open(ctx, forged, ignore)) == 0x0B
+    end
+
+    test "C12 breaks a tie between senders with the same serial number", ctx do
+      # bank_b and twin_b have the same serial number and different PCs.
+      {:ok, by_b} = Sinetex.seal(@content, from: ctx.b, to: ctx.cert_a)
+      opts = [as: ctx.a, from: [certificate("twin_b", pc: 4), ctx.cert_b], pc_check: :ignore]
+
+      assert {:ok, %Opened{sender: sender}} = Sinetex.open(by_b, opts)
+      assert sender == ctx.cert_b
+
+      # C12 matches neither: the sender is ambiguous.
+      no_match = tamper_header(by_b, &%{&1 | c12: 1})
+      assert c03(Sinetex.open(no_match, opts)) == 0x09
+
+      # The same certificate twice is not a tie.
+      assert {:ok, _} = Sinetex.open(no_match, Keyword.put(opts, :from, [ctx.cert_b, ctx.cert_b]))
     end
   end
 
@@ -506,6 +613,7 @@ defmodule SinetexTest do
             [c14_errors: :other],
             [trim_padding: 1],
             [allow_clear: nil],
+            [pc_check: :lenient],
             [max_output_bytes: 0],
             [max_input_bytes: -1],
             [certificate_check: fn _ -> :ok end],

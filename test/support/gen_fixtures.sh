@@ -97,5 +97,13 @@ openssl rsa -in bank_a.key -traditional -out bank_a.pkcs1.pem 2>/dev/null
 openssl rsa -in bank_a.key -traditional -outform DER -out bank_a.pkcs1.der 2>/dev/null
 openssl pkey -in bank_a.key -aes256 -passout pass:test-password -out bank_a.encrypted.key
 
+# A PKCS#12 file, turned into PEM with the commands of guides/manual.md.
+openssl pkcs12 -export -in bank_a.crt -inkey bank_a.key -passout pass:test-password \
+  -out bank_a.p12
+openssl pkcs12 -in bank_a.p12 -passin pass:test-password -clcerts -nokeys \
+  -out bank_a.from_p12.crt
+openssl pkcs12 -in bank_a.p12 -passin pass:test-password -nocerts \
+  -passout pass:test-password -out bank_a.from_p12.key
+
 rm -f ./*.csr ./*.srl ext.cnf
 touch .complete

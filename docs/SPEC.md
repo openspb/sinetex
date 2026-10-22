@@ -112,7 +112,9 @@ byte outside that range makes the serial number invalid (§6) **[L]**.
 
 A serial number longer than 16 bytes (32 hex digits) does not fit in the
 field; RFC 5280 allows up to 20. The library **refuses** such a certificate
-when loading it **[L]**.
+when loading it, unless the caller gives the number to write in C11/C13
+(option `serial:`). The same option serves a counterparty that identifies the
+certificate by another number; both sides must agree on the value **[L]**.
 
 ### 3.2 PC code (C10, C12) [N §5.1, Table 1; §4.2.6]
 
@@ -135,6 +137,14 @@ A code given explicitly always wins over the derived one. Without `OU=CSPB-n`
 and without a code, loading the certificate fails with `:pc_code_required`
 **[L]**. The library does not try to recognize the certification authority by
 the issuer name.
+
+When receiving, the default (`pc_check: :strict`) compares C10 with the PC of
+the receiver's certificate and picks the sender by C13 and C12 (§6.2). With
+`pc_check: :ignore`, C10 is not compared and the sender is picked by C13
+alone; C12 only breaks a tie between expected senders with the same serial
+number, and when it cannot, the error is `0x09`. The header is not signed, so
+this changes no cryptographic check: the signature is verified the same way
+**[L]**.
 
 ---
 
@@ -161,7 +171,9 @@ the issuer name.
 ### 4.1 The "empty" header [N §5.6.3]
 
 The GEN0001 (echo) may have **every field zeroed except C01**. Its body is then
-in clear text, neither signed nor encrypted. The library recognizes this case
+in clear text, neither signed nor encrypted. C11 and C13 count as zeroed with
+32 bytes `0x00` or with the serial number zero in the format of §3.1 (32 ×
+`'0'`) **[L]**. The library recognizes this case
 only when the receiver asks for it (`allow_clear: true`) and then returns the
 body as it is, marked `:clear`. Otherwise the envelope is rejected with `0x02`,
 so that an application that does not expect clear text never gets it by
@@ -171,7 +183,9 @@ accident **[L]**.
 
 The manual does not say how to fill C14 or C06/C07 when C04 means "not
 encrypted". The library sends **C14 as 256 bytes `0x00`** and keeps C06/C07 at
-the values of the version **[P]**. When receiving, C14 is ignored in that case.
+the values of the version **[P]**. When receiving, C14 is ignored in that case,
+C06 is not checked, and C07 may be `0x00` as well as the value of the version:
+there is no symmetric key to select **[L]**.
 
 Without a recipient (allowed only when there is no encryption), C10 is `0x00`
 and C11 is 32 bytes `0x00` **[L]**.
@@ -260,7 +274,7 @@ reported:
 | Empty header (§4.1) | with `allow_clear`, return the body as clear text, without the checks below; otherwise `0x02` **[L]** |
 | C02 ∉ {`0x02`, `0x03`}; `0x00` ("clear text") is accepted only in the empty header **[L]** | `0x02` |
 | C06 ≠ `0x02`, or different from the size of my certificate's key | `0x03` |
-| C07 invalid, or incompatible with C02 (v2 ↔ `0x01`, v3 ↔ `0x02`) **[L]** | `0x04` |
+| C07 invalid, or incompatible with C02 (v2 ↔ `0x01`, v3 ↔ `0x02`); without encryption `0x00` is accepted too (§4.2) **[L]** | `0x04` |
 | C08 ≠ `0x02`, or different from the size of the sender's key | `0x05` |
 | C09 ≠ `0x03` | `0x06` |
 | C10 ≠ PC of my certificate | `0x07` |
@@ -272,6 +286,8 @@ reported:
 | The caller's certificate check (§6.4) | the code it returns |
 
 The checks of C06, C10 and C11 apply only when the content is encrypted.
+With `pc_check: :ignore`, C10 is not checked and the rows of C12 and C13 work
+by serial number alone (§3.2).
 
 **Phase B: cryptography.** In order, stopping at the first error:
 
@@ -351,7 +367,9 @@ directory are checked.
 library does not know. The documentation advises: clearing houses → `:gzip`;
 files for the Bacen SFTP servers → `:zip` [N §5.8.27]. A ZIP has a single
 DEFLATE entry, by default named `content`; the name counterparties expect is
-not known yet **[P]**.
+not known yet **[P]**. The option `compression_level:` (`:default`, `:none`,
+`:best_speed`, `:best_compression` or `0..9`) sets the zlib level of either
+format; without it the output is the same as with `:default` **[L]**.
 
 **Limits [L]:** decompression has a configurable output limit (defense against
 "decompression bombs"). The input has a configurable limit too.

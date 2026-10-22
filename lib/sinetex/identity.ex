@@ -43,7 +43,7 @@ defmodule Sinetex.Identity do
 
   ## Options
 
-    * `:pc` - see `Sinetex.Certificate.load/2`.
+    * `:pc` and `:serial` - see `Sinetex.Certificate.load/2`.
     * `:password` - password of an encrypted PEM key.
 
   ## Examples
@@ -53,9 +53,9 @@ defmodule Sinetex.Identity do
   """
   @spec load(binary(), binary(), keyword()) :: {:ok, t()} | {:error, load_error()}
   def load(cert, key, opts \\ []) when is_binary(cert) and is_binary(key) and is_list(opts) do
-    opts = Keyword.validate!(opts, [:pc, :password])
+    opts = Keyword.validate!(opts, [:pc, :serial, :password])
 
-    with {:ok, certificate} <- Sinetex.Certificate.load(cert, Keyword.take(opts, [:pc])),
+    with {:ok, certificate} <- Sinetex.Certificate.load(cert, Keyword.take(opts, [:pc, :serial])),
          {:ok, private_key} <- decode_key(key, opts[:password]),
          :ok <- check_match(certificate, private_key) do
       {:ok, %__MODULE__{certificate: certificate, private_key: private_key}}

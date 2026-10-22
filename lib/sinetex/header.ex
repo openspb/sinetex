@@ -133,9 +133,20 @@ defmodule Sinetex.Header do
   Returns `true` for the "empty" header of §5.6.3: every field zeroed except
   C01. The body of such an envelope is in clear text, neither signed nor
   encrypted.
+
+  C11 and C13 may hold either 32 bytes `0x00` or the serial number zero in
+  the format of §5.1.4 (32 ASCII `"0"`).
   """
   @spec empty?(t()) :: boolean()
-  def empty?(%__MODULE__{} = header), do: header == %__MODULE__{c01: header.c01}
+  def empty?(%__MODULE__{} = header) do
+    %{header | c11: zero_serial(header.c11), c13: zero_serial(header.c13)} ==
+      %__MODULE__{c01: header.c01}
+  end
+
+  @zero_serial String.duplicate("0", 32)
+
+  defp zero_serial(@zero_serial), do: <<0::256>>
+  defp zero_serial(field), do: field
 
   defimpl Inspect do
     import Inspect.Algebra

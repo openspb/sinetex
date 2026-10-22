@@ -21,12 +21,17 @@ defmodule Sinetex.Compression do
   ## Compression
 
   @spec compress(binary(), format(), keyword()) :: {:ok, binary()} | {:error, atom()}
-  def compress(data, :gzip, _opts), do: {:ok, :zlib.gzip(data)}
+  def compress(data, :gzip, opts) do
+    case level(opts) do
+      :default -> {:ok, :zlib.gzip(data)}
+      level -> {:ok, deflate(data, level, 31)}
+    end
+  end
 
   def compress(data, :zip, opts) when byte_size(data) < 0xFFFFFFFF do
     name = Keyword.fetch!(opts, :zip_entry_name)
     crc = :erlang.crc32(data)
-    compressed = deflate_raw(data)
+    compressed = deflate(data, level(opts), -15)
     # 1980-01-01 00:00, so that the output does not depend on the clock.
     {time, date} = {0, 0x21}
     # Bit 11: the name is UTF-8.
@@ -58,11 +63,14 @@ defmodule Sinetex.Compression do
 
   def compress(_data, :zip, _opts), do: {:error, :zip64_unsupported}
 
-  defp deflate_raw(data) do
+  defp level(opts), do: Keyword.get(opts, :compression_level) || :default
+
+  # Window bits: 31 writes a GZIP stream, -15 raw DEFLATE (for ZIP).
+  defp deflate(data, level, window_bits) do
     z = :zlib.open()
 
     try do
-      :ok = :zlib.deflateInit(z, :default, :deflated, -15, 8, :default)
+      :ok = :zlib.deflateInit(z, level, :deflated, window_bits, 8, :default)
       out = :zlib.deflate(z, data, :finish)
       :ok = :zlib.deflateEnd(z)
       IO.iodata_to_binary(out)

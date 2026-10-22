@@ -67,6 +67,10 @@ defmodule Sinetex do
       not accepted otherwise. There is no default because the right format
       depends on the destination: clearing houses use GZIP, the manual
       describes ZIP (and the Bacen SFTP servers use ZIP with DEFLATE).
+    * `:compression_level` - `:default`, `:none`, `:best_speed`,
+      `:best_compression` or an integer in `0..9`, as in `:zlib`. Only with
+      `:compression`. Without it the output is the same as with `:default`.
+      `:best_speed` is faster and compresses less.
     * `:zip_entry_name` - name of the single ZIP entry, default `"content"`.
 
   ## Errors
@@ -92,7 +96,8 @@ defmodule Sinetex do
 
     * `:as` (required) - your `Sinetex.Identity`; decrypts C14.
     * `:from` (required) - the expected sender: a `Sinetex.Certificate` or a
-      list of them. The certificate is picked by C13 and C12.
+      list of them. The certificate is picked by C13 and C12 (see
+      `:pc_check`).
     * `:known` - other certificates you know, default `[]`. A message signed
       with one of them is rejected with `0x0C` ("certificate does not belong
       to the sender") instead of `0x0A`.
@@ -112,6 +117,13 @@ defmodule Sinetex do
     * `:allow_clear` - accept the "empty" header of §5.6.3 (GEN0001 echo),
       whose body is neither signed nor encrypted. Default `false`: such an
       envelope is rejected with `0x02`.
+    * `:pc_check` - `:strict` (default) checks C10 against the PC of your
+      certificate (`0x07`) and picks the sender by C13 and C12. `:ignore`
+      skips the C10 check and picks the sender by C13 alone, for
+      counterparties that do not fill C10/C12 with the PCs of the
+      certificates. C12 then only breaks a tie between expected senders with
+      the same serial number; if it cannot, the error is `0x09`. The
+      signature is verified the same way in both modes.
     * `:max_output_bytes` - limit for decompressed content, default 512 MiB.
     * `:max_input_bytes` - limit for the envelope, default `:infinity`.
 

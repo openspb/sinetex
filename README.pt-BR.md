@@ -65,7 +65,21 @@ certificado. Para certificados sem esse campo, informe o código:
 `Sinetex.Certificate.load(pem, pc: 4)`.
 
 Os certificados precisam ser RSA-2048, com número de série de até 16 bytes,
-como o cabeçalho exige.
+como o cabeçalho exige. Para um número de série maior, ou uma contraparte que
+identifica o certificado por outro número, informe o número que vai no C11/C13:
+`Sinetex.Certificate.load(pem, serial: 0x3B3BC056)` (a mesma opção existe em
+`Sinetex.Identity.load/3`). Os dois lados precisam usar o mesmo valor.
+
+Um arquivo PKCS#12 (`.pfx`, `.p12`) é lido depois de convertido para PEM:
+
+```
+openssl pkcs12 -in me.pfx -clcerts -nokeys -out me.crt
+openssl pkcs12 -in me.pfx -nocerts -out me.key
+```
+
+O segundo comando pede uma senha nova e mantém a chave cifrada; passe-a com
+`Sinetex.Identity.load(cert, key, password: "...")`. No OpenSSL 3, arquivos
+mais antigos (RC2-40) precisam de `-legacy` nos dois comandos.
 
 ### Emissão
 
@@ -103,6 +117,7 @@ de certificado. Outras opções:
 | `:c14_errors` | `:manual` | `:uniform` reporta a falha ao decifrar o C14 como `0x0E` em vez de `0x0D`. Veja o [SECURITY.md](SECURITY.md) |
 | `:trim_padding` | `false` | A v2 mantém o padding `0x00`, como manda o manual. `true` remove até 7 zeros finais |
 | `:allow_clear` | `false` | Aceita o cabeçalho "vazio" (todos os campos zerados, como no eco da GEN0001), cujo corpo não é assinado nem cifrado |
+| `:pc_check` | `:strict` | `:ignore` não confere o C10 (`0x07`) e escolhe o remetente só pelo C13, para contrapartes que não preenchem C10/C12 com os PCs dos certificados. A assinatura é verificada do mesmo jeito |
 | `:max_output_bytes` | 512 MiB | Teto do conteúdo descompactado |
 | `:max_input_bytes` | `:infinity` | Teto do envelope |
 
@@ -128,6 +143,15 @@ Na recepção, o formato é detectado pelos magic bytes, não pelo C04, e
 `%Sinetex.Opened{compression: :gzip | :zip | :none}` diz qual foi encontrado.
 Conteúdo marcado como compactado que não é GZIP nem ZIP é devolvido como
 chegou, o que já foi observado na prática.
+
+`compression_level: :best_speed` (ou `:none`, `:best_compression`, `0..9`)
+troca tamanho por velocidade na emissão. A saída padrão não muda.
+
+### Memória
+
+`seal/2` e `open/2` trabalham com binários inteiros: o conteúdo, o envelope e
+os resultados intermediários ficam na memória ao mesmo tempo, então o pico é
+algumas vezes o tamanho do conteúdo.
 
 ## Inspecionar tráfego real
 

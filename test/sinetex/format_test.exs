@@ -85,6 +85,11 @@ defmodule Sinetex.FormatTest do
       assert Header.empty?(%Header{})
       refute Header.empty?(%Header{c02: 3})
       refute Header.empty?(%Header{c11: "0000000000000000000000003B3BC056"})
+      # The serial number zero as text (§5.1.4) also counts as zero.
+      zeros = String.duplicate("0", 32)
+      assert Header.empty?(%Header{c11: zeros, c13: zeros})
+      assert Header.empty?(%Header{c13: zeros})
+      refute Header.empty?(%Header{c11: zeros, c13: zeros, c04: 2})
     end
 
     test "encode/1 rejects fields of the wrong size" do

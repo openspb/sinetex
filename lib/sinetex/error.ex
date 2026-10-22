@@ -115,4 +115,10 @@ defmodule Sinetex.Error do
   end
 
   defp hex(code), do: code |> Integer.to_string(16) |> String.pad_leading(2, "0")
+
+  defimpl Inspect do
+    # The reason may hold a list of codes, such as `[8, 10]`, which would
+    # otherwise print as a charlist.
+    def inspect(error, opts), do: Inspect.Any.inspect(error, %{opts | charlists: :as_lists})
+  end
 end

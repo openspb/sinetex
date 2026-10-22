@@ -65,7 +65,13 @@ defmodule Sinetex.PropertyTest do
       rest = binary_part(envelope, pos + 1, byte_size(envelope) - pos - 1)
       byte = Bitwise.bxor(:binary.at(envelope, pos), mask)
       tampered = binary_part(envelope, 0, pos) <> <<byte>> <> rest
-      assert {:error, %Error{}} = open(ctx, tampered)
+
+      if pos == 7 and byte == 0 and opts[:c04] in @not_encrypted do
+        # Without encryption C07 may be 0x00.
+        assert {:ok, _} = open(ctx, tampered)
+      else
+        assert {:error, %Error{}} = open(ctx, tampered)
+      end
     end
   end
 

@@ -62,7 +62,21 @@ from `OU=CSPB-n` in the certificate issuer. For certificates without it, give
 it explicitly: `Sinetex.Certificate.load(pem, pc: 4)`.
 
 Certificates must be RSA-2048 with a serial number of at most 16 bytes, as the
-header requires.
+header requires. For a longer serial number, or a counterparty that identifies
+the certificate by another number, give the number to write in C11/C13:
+`Sinetex.Certificate.load(pem, serial: 0x3B3BC056)` (the same option exists in
+`Sinetex.Identity.load/3`). Both sides must agree on it.
+
+A PKCS#12 file (`.pfx`, `.p12`) is read after turning it into PEM:
+
+```
+openssl pkcs12 -in me.pfx -clcerts -nokeys -out me.crt
+openssl pkcs12 -in me.pfx -nocerts -out me.key
+```
+
+The second command asks for a new password and keeps the key encrypted; pass
+it with `Sinetex.Identity.load(cert, key, password: "...")`. With OpenSSL 3,
+older files (RC2-40) need `-legacy` in both commands.
 
 ### Sending
 
@@ -100,6 +114,7 @@ certificates. Other options:
 | `:c14_errors` | `:manual` | `:uniform` reports a failure to decrypt C14 as `0x0E` instead of `0x0D`. See [SECURITY.md](SECURITY.md) |
 | `:trim_padding` | `false` | v2 keeps its `0x00` padding, as the manual says. `true` removes up to 7 trailing zeros |
 | `:allow_clear` | `false` | Accept the "empty" header (all fields zero, e.g. a GEN0001 echo), whose body is neither signed nor encrypted |
+| `:pc_check` | `:strict` | `:ignore` skips the check of C10 (`0x07`) and picks the sender by C13 alone, for counterparties that do not fill C10/C12 with the PCs of the certificates. The signature is verified the same way |
 | `:max_output_bytes` | 512 MiB | Limit for decompressed content |
 | `:max_input_bytes` | `:infinity` | Limit for the envelope |
 
@@ -125,6 +140,15 @@ When receiving, the format is detected by its magic bytes, not by C04, and
 `%Sinetex.Opened{compression: :gzip | :zip | :none}` tells which one was found.
 Content marked as compressed that is not GZIP or ZIP is returned as is, which
 has been observed in practice.
+
+`compression_level: :best_speed` (or `:none`, `:best_compression`, `0..9`)
+trades size for speed when sending. The default output does not change.
+
+### Memory
+
+`seal/2` and `open/2` work on whole binaries: the content, the envelope and the
+intermediate results are in memory at the same time, so the peak is a few
+times the size of the content.
 
 ## Inspecting real traffic
 

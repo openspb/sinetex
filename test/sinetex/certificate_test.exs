@@ -1,7 +1,7 @@
 defmodule Sinetex.CertificateTest do
   use ExUnit.Case, async: true
 
-  import Sinetex.Fixtures, only: [read!: 1]
+  import Sinetex.Fixtures, only: [read!: 1, certificate: 1]
   alias Sinetex.{Certificate, Identity}
 
   describe "Certificate.load/2" do
@@ -37,6 +37,18 @@ defmodule Sinetex.CertificateTest do
       assert {:ok, %{pc: 4}} = Certificate.load(read!("chamber.crt"), pc: 4)
     end
 
+    test ":serial replaces the serial number written in C11/C13" do
+      {:ok, cert} = Certificate.load(read!("long_serial.crt"), serial: 0x1234)
+      assert cert.serial_field == "00000000000000000000000000001234"
+      assert cert.serial == 0x0102030405060708090A0B0C0D0E0F1011
+
+      assert {:ok, %{serial_field: "00000000000000000000000000000000"}} =
+               Certificate.load(read!("bank_a.crt"), serial: 0)
+
+      assert Certificate.load(read!("bank_a.crt"), serial: Bitwise.bsl(1, 128)) ==
+               {:error, :serial_too_long}
+    end
+
     test "rejects keys and serials the protocol cannot carry" do
       assert Certificate.load(read!("long_serial.crt")) == {:error, :serial_too_long}
       assert Certificate.load(read!("e3.crt")) == {:error, {:invalid_public_exponent, 3}}
@@ -61,6 +73,8 @@ defmodule Sinetex.CertificateTest do
       assert_raise ArgumentError, fn -> Certificate.load(read!("bank_a.crt"), pc: 0) end
       assert_raise ArgumentError, fn -> Certificate.load(read!("bank_a.crt"), pc: 256) end
       assert_raise ArgumentError, fn -> Certificate.load(read!("bank_a.crt"), foo: 1) end
+      assert_raise ArgumentError, fn -> Certificate.load(read!("bank_a.crt"), serial: -1) end
+      assert_raise ArgumentError, fn -> Certificate.load(read!("bank_a.crt"), serial: "1") end
     end
 
     test "inspect" do
@@ -97,6 +111,24 @@ defmodule Sinetex.CertificateTest do
                {:error, :pc_code_required}
 
       assert {:ok, _} = Identity.load(read!("chamber.crt"), read!("chamber.key"), pc: 4)
+    end
+
+    test ":serial" do
+      cert = read!("long_serial.crt")
+      key = read!("long_serial.key")
+      assert Identity.load(cert, key) == {:error, :serial_too_long}
+
+      assert {:ok, %Identity{certificate: %{serial_field: "0000000000000000000000000000ABCD"}}} =
+               Identity.load(cert, key, serial: 0xABCD)
+    end
+
+    test "a PKCS#12 file converted with the commands of the guide" do
+      assert {:ok, me} =
+               Identity.load(read!("bank_a.from_p12.crt"), read!("bank_a.from_p12.key"),
+                 password: "test-password"
+               )
+
+      assert me.certificate == certificate("bank_a")
     end
 
     test "garbage key" do

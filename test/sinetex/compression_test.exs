@@ -68,6 +68,31 @@ defmodule Sinetex.CompressionTest do
     end
   end
 
+  describe "compression level" do
+    test "the default output is the one of :zlib.gzip/1", %{data: data} do
+      assert Compression.compress(data, :gzip, []) == {:ok, :zlib.gzip(data)}
+
+      assert Compression.compress(data, :gzip, compression_level: :default) ==
+               {:ok, :zlib.gzip(data)}
+
+      assert Compression.compress(data, :zip, zip_entry_name: "c") ==
+               Compression.compress(data, :zip, zip_entry_name: "c", compression_level: :default)
+    end
+
+    test "every level reads back", %{data: data} do
+      for format <- [:gzip, :zip], level <- [:none, :best_speed, :best_compression, 0, 1, 9] do
+        opts = [zip_entry_name: "c", compression_level: level]
+        {:ok, packed} = Compression.compress(data, format, opts)
+        assert Compression.decompress(packed, @max) == {:ok, data, format}, inspect(level)
+      end
+
+      {:ok, stored} = Compression.compress(data, :gzip, compression_level: :none)
+      {:ok, best} = Compression.compress(data, :gzip, compression_level: :best_compression)
+      assert byte_size(stored) > byte_size(data)
+      assert byte_size(best) < byte_size(data)
+    end
+  end
+
   describe "ZIP" do
     test "roundtrip, readable by OTP's :zip", %{data: data} do
       {:ok, zip} = Compression.compress(data, :zip, zip_entry_name: "arquivo.xml")

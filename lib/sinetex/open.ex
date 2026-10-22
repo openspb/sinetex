@@ -26,6 +26,7 @@ defmodule Sinetex.Open do
         c14_errors: :manual,
         trim_padding: false,
         allow_clear: false,
+        pc_check: :strict,
         max_input_bytes: :infinity,
         max_output_bytes: @default_max_output
       ])
@@ -47,6 +48,7 @@ defmodule Sinetex.Open do
     validate!(opts, :c14_errors, &(&1 in [:manual, :uniform]), ":manual or :uniform")
     validate!(opts, :trim_padding, &is_boolean/1, "a boolean")
     validate!(opts, :allow_clear, &is_boolean/1, "a boolean")
+    validate!(opts, :pc_check, &(&1 in [:strict, :ignore]), ":strict or :ignore")
 
     validate!(
       opts,
@@ -127,16 +129,17 @@ defmodule Sinetex.Open do
     # C06, C10 and C11 only matter when the content is encrypted. An unknown
     # C04 counts as encrypted.
     encrypted? = h.c04 not in @not_encrypted
-    {sender, sender_codes} = find_sender(h, ctx.senders, ctx.known)
+    pc_check = ctx.opts.pc_check
+    {sender, sender_codes} = find_sender(h, ctx.senders, ctx.known, pc_check)
 
     codes =
       [
         {h.c02 not in [2, 3], 0x02},
         {encrypted? and h.c06 != 0x02, 0x03},
-        {not c07_ok?(h.c02, h.c07), 0x04},
+        {not c07_ok?(h.c02, h.c07, encrypted?), 0x04},
         {h.c08 != 0x02, 0x05},
         {h.c09 != 0x03, 0x06},
-        {encrypted? and h.c10 != mine.pc, 0x07},
+        {encrypted? and pc_check == :strict and h.c10 != mine.pc, 0x07},
         {encrypted? and h.c11 != mine.serial_field, 0x08},
         {h.c04 not in @c04_values, 0x13}
       ]
@@ -153,18 +156,20 @@ defmodule Sinetex.Open do
     end
   end
 
-  # v2 goes with 3DES, v3 with AES-256. With an invalid version, only the
+  # v2 goes with 3DES, v3 with AES-256. Without encryption there is no
+  # symmetric key, so 0x00 is accepted too. With an invalid version, only the
   # value itself is checked.
-  defp c07_ok?(2, c07), do: c07 == 0x01
-  defp c07_ok?(3, c07), do: c07 == 0x02
-  defp c07_ok?(_, c07), do: c07 in [0x01, 0x02]
+  defp c07_ok?(_version, 0x00, false = _encrypted?), do: true
+  defp c07_ok?(2, c07, _encrypted?), do: c07 == 0x01
+  defp c07_ok?(3, c07, _encrypted?), do: c07 == 0x02
+  defp c07_ok?(_, c07, _encrypted?), do: c07 in [0x01, 0x02]
 
   # The sender certificate is found by C13 (serial) and C12 (PC).
   #   - exact match among the expected senders: ok;
   #   - exact match among the other known certificates: 0x0C;
   #   - serial matches, PC does not: 0x09;
   #   - nothing matches: 0x0A.
-  defp find_sender(h, senders, known) do
+  defp find_sender(h, senders, known, :strict) do
     if Serial.valid?(h.c13) do
       by_serial = fn certs -> Enum.filter(certs, &(&1.serial_field == h.c13)) end
       exact = fn certs -> Enum.find(certs, &(&1.pc == h.c12)) end
@@ -181,8 +186,34 @@ defmodule Sinetex.Open do
     end
   end
 
+  # With pc_check: :ignore the certificate is found by C13 alone. C12 only
+  # breaks a tie between expected senders with the same serial number; when
+  # it cannot, the sender is ambiguous: 0x09.
+  defp find_sender(h, senders, known, :ignore) do
+    if Serial.valid?(h.c13) do
+      case {by_serial(senders, h.c13), by_serial(known, h.c13)} do
+        {[sender], _} -> {sender, []}
+        {[], []} -> {nil, [0x0A]}
+        {[], _known} -> {nil, [0x0C]}
+        {candidates, _} -> break_tie(candidates, h.c12)
+      end
+    else
+      {nil, [0x0A]}
+    end
+  end
+
   defp c12_zero(%Header{c12: 0}), do: [0x09]
   defp c12_zero(_), do: []
+
+  defp by_serial(certs, c13),
+    do: certs |> Enum.filter(&(&1.serial_field == c13)) |> Enum.uniq_by(& &1.der)
+
+  defp break_tie(candidates, c12) do
+    case Enum.filter(candidates, &(&1.pc == c12)) do
+      [sender] -> {sender, []}
+      _ -> {nil, [0x09]}
+    end
+  end
 
   defp certificate_check(nil, _header, _fun), do: []
   defp certificate_check(_sender, _header, nil), do: []

@@ -49,6 +49,7 @@ defmodule Sinetex.Seal do
         :from,
         to: nil,
         compression: nil,
+        compression_level: nil,
         version: 3,
         c04: 0,
         zip_entry_name: "content"
@@ -62,6 +63,13 @@ defmodule Sinetex.Seal do
 
     validate!(
       opts,
+      :compression_level,
+      &(&1 in [nil, :default, :none, :best_speed, :best_compression] or &1 in 0..9),
+      ":default, :none, :best_speed, :best_compression or an integer in 0..9"
+    )
+
+    validate!(
+      opts,
       :zip_entry_name,
       &(is_binary(&1) and byte_size(&1) in 1..0xFFFF),
       "a non-empty binary"
@@ -70,6 +78,10 @@ defmodule Sinetex.Seal do
     if opts[:compression] && opts[:c04] not in @compressed do
       raise ArgumentError,
             "the :compression option only applies to c04 8 or 10, got c04: #{opts[:c04]}"
+    end
+
+    if opts[:compression_level] && !opts[:compression] do
+      raise ArgumentError, "the :compression_level option needs :compression"
     end
 
     opts

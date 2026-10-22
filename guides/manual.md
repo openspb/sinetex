@@ -46,7 +46,9 @@ confirmada com tráfego real) ou decisão da biblioteca.
 Na carga, a biblioteca confere o que o protocolo exige: chave RSA de
 exatamente 2048 bits (o que garante o bit mais significativo do módulo
 ligado), expoente público diferente de 3 e número de série de até 16 bytes,
-que é o que cabe nos 32 caracteres de C11/C13.
+que é o que cabe nos 32 caracteres de C11/C13. Para um número maior, ou quando
+a contraparte conhece o certificado por outro número, a opção `serial:` define
+o número que vai no C11/C13. Os dois lados precisam usar o mesmo valor.
 
 O código da PC vem de `OU=CSPB-n` no emissor do certificado (§4.2.6). Um
 certificado fora do padrão SPB, como os que algumas câmaras usam, não tem esse
@@ -55,6 +57,20 @@ campo: informe o código com `pc:`. Sem ele, a carga falha com
 
 A chave privada pode vir em PEM ou DER, PKCS#1 ou PKCS#8, inclusive PKCS#8
 cifrado (`password:`).
+
+### Arquivo PKCS#12 (`.pfx`, `.p12`)
+
+A biblioteca não lê PKCS#12 diretamente. Converta o arquivo para PEM:
+
+```
+openssl pkcs12 -in me.pfx -clcerts -nokeys -out me.crt
+openssl pkcs12 -in me.pfx -nocerts -out me.key
+```
+
+O segundo comando pede uma senha nova e grava a chave cifrada, que é carregada
+com `Sinetex.Identity.load(cert, key, password: "...")`. Evite gravar a chave
+sem senha. No OpenSSL 3, arquivos mais antigos, cifrados com RC2-40, precisam
+de `-legacy` nos dois comandos; os mais novos (PBES2 com AES-256) não.
 
 ## Emissão (§5.2)
 
@@ -95,6 +111,15 @@ end
 O erro traz o código do C03, o código da GEN0004 (`EGEN9901` a `EGEN9920`), o
 campo do cabeçalho e uma mensagem. O motivo interno (campo `reason`) serve só
 para log: não o mande para a contraparte.
+
+Sem cifra (C04 2, 3, 6 e 10) não há chave simétrica: C06 não é conferido e o
+C07 pode vir `0x00`, além do valor da versão.
+
+Por padrão o C10 precisa ser o PC do seu certificado e o remetente é escolhido
+pelo C13 e pelo C12. Com uma contraparte que não preenche C10/C12 com os PCs
+dos certificados, `pc_check: :ignore` deixa de conferir o C10 e escolhe o
+remetente só pelo C13; o C12 só desempata entre remetentes com o mesmo número
+de série. A assinatura é verificada do mesmo jeito.
 
 Os erros que dependem do seu cadastro de certificados (§4.4.10, §4.5.11,
 §5.3.2) ficam com você, pela opção `:certificate_check`:
@@ -161,7 +186,9 @@ cifrados: é o que se observa na prática.
 
 O cabeçalho "vazio" de §5.6.3, com tudo zerado menos o C01, traz o corpo em
 claro, sem assinatura. Por padrão ele é recusado com `0x02`; com
-`allow_clear: true`, o conteúdo volta marcado `protection: :clear`.
+`allow_clear: true`, o conteúdo volta marcado `protection: :clear`. C11 e C13
+podem vir com bytes `0x00` ou com o número de série zero no formato de §5.1.4
+(32 caracteres `"0"`).
 
 ## Compactação (§5.6.2, §5.8.27)
 
@@ -172,6 +199,9 @@ ou 10 exige `compression: :gzip` ou `compression: :zip`.
 Na recepção, o formato é reconhecido pelos *magic bytes*, e
 `opened.compression` diz qual foi encontrado. Conteúdo marcado como
 compactado que não é GZIP nem ZIP volta como chegou.
+
+Na emissão, `compression_level:` (`:best_speed`, `:best_compression`, `:none`
+ou `0..9`) troca tamanho por velocidade. Sem a opção, a saída é a de sempre.
 
 ## Versão 2 (§5.1.2, §5.7.14)
 

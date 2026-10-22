@@ -33,6 +33,15 @@ defmodule Sinetex.Certificate do
       significant bit of the modulus is set (§4.2.8);
     * public exponent other than 3 (§4.2.7);
     * serial number of at most 16 bytes, so that it fits C11/C13.
+
+  ## Serial number in C11/C13
+
+  By default C11/C13 carry the serial number of the certificate (§5.1.4). The
+  `:serial` option replaces it with another number, for a certificate whose
+  serial does not fit the field (RFC 5280 allows up to 20 bytes) or for a
+  counterparty that identifies the certificate by another number. Both sides
+  must agree on the value. The struct keeps both: `serial` is the number in
+  the certificate and `serial_field` is what goes in C11/C13.
   """
 
   require Record
@@ -119,21 +128,26 @@ defmodule Sinetex.Certificate do
 
     * `:pc` - the certification authority code (1..255) to write in C10/C12.
       Required when the issuer has no `OU=CSPB-n`.
+    * `:serial` - a non-negative integer to write in C11/C13 instead of the
+      serial number of the certificate. It must fit in 16 bytes; otherwise
+      loading fails with `{:error, :serial_too_long}`.
 
   ## Examples
 
       {:ok, peer} = Sinetex.Certificate.load(File.read!("peer.pem"))
       {:ok, chamber} = Sinetex.Certificate.load(File.read!("chamber.pem"), pc: 0x04)
+      {:ok, peer} = Sinetex.Certificate.load(File.read!("peer.pem"), serial: 0x3B3BC056)
   """
   @spec load(binary(), keyword()) :: {:ok, t()} | {:error, load_error()}
   def load(cert, opts \\ []) when is_binary(cert) and is_list(opts) do
-    opts = Keyword.validate!(opts, [:pc])
+    opts = Keyword.validate!(opts, [:pc, :serial])
     pc_option = validate_pc!(opts[:pc])
+    serial_option = validate_serial!(opts[:serial])
 
     with {:ok, der} <- to_der(cert),
          {:ok, tbs} <- decode(der),
          {:ok, public_key} <- public_key(tbs),
-         {:ok, serial_field} <- Sinetex.Serial.encode(tbs(tbs, :serialNumber)),
+         {:ok, serial_field} <- Sinetex.Serial.encode(serial_option || tbs(tbs, :serialNumber)),
          {:ok, pc} <- pc_code(pc_option, tbs(tbs, :issuer)) do
       {not_before, not_after} = validity_dates(tbs(tbs, :validity))
 
@@ -159,6 +173,14 @@ defmodule Sinetex.Certificate do
 
   def validate_pc!(pc) do
     raise ArgumentError, "expected :pc to be an integer in 1..255, got: #{inspect(pc)}"
+  end
+
+  defp validate_serial!(nil), do: nil
+  defp validate_serial!(serial) when is_integer(serial) and serial >= 0, do: serial
+
+  defp validate_serial!(serial) do
+    raise ArgumentError,
+          "expected :serial to be a non-negative integer, got: #{inspect(serial)}"
   end
 
   @doc false
