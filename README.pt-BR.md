@@ -41,7 +41,7 @@ envelope, e vice-versa. Não tem dependências em tempo de execução além de
 
 ```elixir
 def deps do
-  [{:sinetex, "~> 0.1"}]
+  [{:sinetex, "~> 0.2"}]
 end
 ```
 

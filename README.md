@@ -38,7 +38,7 @@ envelope, and the other way round. It has no runtime dependencies besides
 
 ```elixir
 def deps do
-  [{:sinetex, "~> 0.1"}]
+  [{:sinetex, "~> 0.2"}]
 end
 ```
 
