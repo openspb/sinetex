@@ -14,15 +14,6 @@ page of Banco Central.
 
 [Leia em português](README.pt-BR.md).
 
-> **Status: v0.1, pre-release.** The library follows the manual and is tested
-> against an independent implementation, but a few points where the manual is
-> silent follow observed market practice and have not been confirmed against
-> real traffic yet. They are listed in [docs/SPEC.md](docs/SPEC.md#9-market-practice-items-to-confirm).
-> Version 1.0 waits for that confirmation.
->
-> Sinetex is an independent open source project. It is not affiliated with or
-> endorsed by Banco Central do Brasil.
-
 ## Scope
 
 **In:** the header (C01–C15), sending and receiving in v2 and v3, every C04

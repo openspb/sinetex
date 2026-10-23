@@ -14,15 +14,6 @@ do Banco Central.
 
 [Read in English](README.md).
 
-> **Status: v0.1, pré-lançamento.** A biblioteca segue o manual e é testada
-> contra uma implementação independente. Alguns pontos em que o manual é
-> omisso seguem a prática de mercado observada e ainda não foram confirmados
-> com tráfego real. A lista está em [docs/SPEC.md](docs/SPEC.md#9-market-practice-items-to-confirm).
-> A versão 1.0 depende dessa confirmação.
->
-> O Sinetex é um projeto independente, de código aberto. Não tem vínculo com o
-> Banco Central do Brasil nem é endossado por ele.
-
 O [guia em português](guides/manual.md) põe cada função ao lado da seção do
 manual que ela implementa.
 
