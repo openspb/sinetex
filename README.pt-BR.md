@@ -61,7 +61,17 @@ identifica o certificado por outro número, informe o número que vai no C11/C13
 `Sinetex.Certificate.load(pem, serial: 0x3B3BC056)` (a mesma opção existe em
 `Sinetex.Identity.load/3`). Os dois lados precisam usar o mesmo valor.
 
-Um arquivo PKCS#12 (`.pfx`, `.p12`) é lido depois de convertido para PEM:
+Um arquivo PKCS#12 (`.pfx`, `.p12`) pode ser lido com o pacote
+[pkcs12](https://hex.pm/packages/pkcs12), separado (`{:pkcs12, "~> 0.1"}`),
+que entrega a chave e o certificado em DER, inclusive de arquivos antigos
+cifrados com RC2-40 e sem o provedor "legacy" do OpenSSL:
+
+```elixir
+p12 = PKCS12.decode!(File.read!("me.pfx"), senha)
+{:ok, me} = Sinetex.Identity.load(p12.certificate, p12.private_key)
+```
+
+Sem ele, converta o arquivo para PEM com o OpenSSL:
 
 ```
 openssl pkcs12 -in me.pfx -clcerts -nokeys -out me.crt

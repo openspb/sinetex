@@ -60,7 +60,18 @@ cifrado (`password:`).
 
 ### Arquivo PKCS#12 (`.pfx`, `.p12`)
 
-A biblioteca não lê PKCS#12 diretamente. Converta o arquivo para PEM:
+A biblioteca não lê PKCS#12 diretamente. O pacote
+[pkcs12](https://hex.pm/packages/pkcs12), separado (`{:pkcs12, "~> 0.1"}`),
+lê o arquivo e entrega a chave (PKCS#8) e o certificado em DER, prontos para
+`Sinetex.Identity.load/3`. Ele lê também os arquivos antigos, cifrados com
+RC2-40, sem o provedor "legacy" do OpenSSL 3:
+
+```elixir
+p12 = PKCS12.decode!(File.read!("me.pfx"), senha)
+{:ok, me} = Sinetex.Identity.load(p12.certificate, p12.private_key)
+```
+
+Sem o pacote, converta o arquivo para PEM:
 
 ```
 openssl pkcs12 -in me.pfx -clcerts -nokeys -out me.crt
